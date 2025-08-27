@@ -16,6 +16,18 @@ trait HasTranslations
         static::saved(function ($model) {
             $model->saveTranslations();
         });
+        static::deleting(function ($model) {
+            if (method_exists($model, 'isForceDeleting')) {
+                if ($model->isForceDeleting()) {
+                    // Suppression définitive
+                    $model->translations()->delete();
+                }
+                // Sinon, on garde les traductions pour les soft deletes
+            } else {
+                // Pas de soft delete, suppression directe
+                $model->translations()->delete();
+            }
+        });
     }
 
     /**
