@@ -8,6 +8,7 @@ use Nramos\Translatable\Models\Translation;
 trait HasTranslations
 {
     protected static $currentLocale = null;
+
     private $_pendingTranslations = [];
 
     public static function bootHasTranslations(): void
@@ -95,7 +96,7 @@ trait HasTranslations
         }
 
         // Sinon, ajouter le préfixe __
-        return '__' . $attribute;
+        return '__'.$attribute;
     }
 
     /**
