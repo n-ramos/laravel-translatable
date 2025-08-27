@@ -5,13 +5,13 @@ namespace Nramos\Translatable\Traits;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Nramos\Translatable\Models\Translation;
 
-class HasTranslations
+trait HasTranslations
 {
     protected static $currentLocale = null;
+    private $_pendingTranslations = [];
 
-    public static function bootTranslatable()
+    public static function bootHasTranslations(): void
     {
-        // Intercepter les événements pour sauvegarder les traductions
         static::saved(function ($model) {
             $model->saveTranslations();
         });
@@ -85,10 +85,62 @@ class HasTranslations
     }
 
     /**
+     * Obtenir l'attribut traduit correspondant (ex: name -> __name)
+     */
+    protected function getTranslatableAttributeName(string $attribute): string
+    {
+        // Si l'attribut commence déjà par __, le retourner tel quel
+        if (strpos($attribute, '__') === 0) {
+            return $attribute;
+        }
+
+        // Sinon, ajouter le préfixe __
+        return '__' . $attribute;
+    }
+
+    /**
+     * Obtenir l'attribut original depuis l'attribut traduit (ex: __name -> name)
+     */
+    protected function getOriginalAttributeName(string $translatableAttribute): string
+    {
+        if (strpos($translatableAttribute, '__') === 0) {
+            return substr($translatableAttribute, 2); // Enlever les 2 premiers caractères "__"
+        }
+
+        return $translatableAttribute;
+    }
+
+    /**
      * Magic getter pour les attributs traduisibles
      */
     public function getAttribute($key)
     {
+        $translatableKey = $this->getTranslatableAttributeName($key);
+
+        // Si l'attribut traduit existe dans translatableAttributes
+        if ($this->isTranslatableAttribute($translatableKey)) {
+            $translation = $this->getTranslation($translatableKey);
+
+            if ($translation !== null) {
+                return $translation;
+            }
+
+            // Fallback sur la locale par défaut
+            if ($this->getCurrentLocale() !== config('app.fallback_locale')) {
+                $fallback = $this->getTranslation($translatableKey, config('app.fallback_locale'));
+                if ($fallback !== null) {
+                    return $fallback;
+                }
+            }
+
+            // Fallback final sur la colonne BDD originale si elle existe
+            $originalValue = parent::getAttribute($key);
+            if ($originalValue !== null) {
+                return $originalValue;
+            }
+        }
+
+        // Si c'est directement un attribut traduisible (ex: __name)
         if ($this->isTranslatableAttribute($key)) {
             $translation = $this->getTranslation($key);
 
@@ -96,7 +148,7 @@ class HasTranslations
                 return $translation;
             }
 
-            // Fallback sur la locale par défaut si pas de traduction trouvée
+            // Fallback sur la locale par défaut
             if ($this->getCurrentLocale() !== config('app.fallback_locale')) {
                 $fallback = $this->getTranslation($key, config('app.fallback_locale'));
                 if ($fallback !== null) {
@@ -113,8 +165,27 @@ class HasTranslations
      */
     public function setAttribute($key, $value)
     {
+        $translatableKey = $this->getTranslatableAttributeName($key);
+
+        // Si l'attribut traduit existe dans translatableAttributes (ex: name -> __name)
+        if ($this->isTranslatableAttribute($translatableKey)) {
+            // Sauvegarder dans la colonne BDD originale si elle existe
+            if ($this->hasColumn($key)) {
+                $this->attributes[$key] = $value;
+            }
+
+            // ET sauvegarder comme traduction
+            $this->_pendingTranslations[$translatableKey] = [
+                'locale' => $this->getCurrentLocale(),
+                'value' => $value,
+            ];
+
+            return $this;
+        }
+
+        // Si c'est directement un attribut traduisible (ex: __name)
         if ($this->isTranslatableAttribute($key)) {
-            $this->pendingTranslations[$key] = [
+            $this->_pendingTranslations[$key] = [
                 'locale' => $this->getCurrentLocale(),
                 'value' => $value,
             ];
@@ -126,19 +197,32 @@ class HasTranslations
     }
 
     /**
+     * Vérifier si une colonne existe dans la table
+     */
+    protected function hasColumn(string $column): bool
+    {
+        try {
+            return \Schema::hasColumn($this->getTable(), $column);
+        } catch (\Exception $e) {
+            // En cas d'erreur, on assume que la colonne n'existe pas
+            return false;
+        }
+    }
+
+    /**
      * Sauvegarder les traductions en attente
      */
-    protected function saveTranslations()
+    protected function saveTranslations(): void
     {
-        if (! isset($this->pendingTranslations)) {
+        if (empty($this->_pendingTranslations)) {
             return;
         }
 
-        foreach ($this->pendingTranslations as $attribute => $data) {
+        foreach ($this->_pendingTranslations as $attribute => $data) {
             $this->setTranslation($attribute, $data['locale'], $data['value']);
         }
 
-        unset($this->pendingTranslations);
+        $this->_pendingTranslations = [];
     }
 
     /**

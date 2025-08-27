@@ -18,7 +18,7 @@ return new class extends Migration
 
                // Index pour optimiser les requêtes
                $table->unique(['translatable_type', 'translatable_id', 'locale', 'attribute_name'], 'model_translations_unique');
-               $table->index(['translatable_type', 'translatable_id']);
+
                $table->index('locale');
            });
        }
