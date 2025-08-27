@@ -2,6 +2,10 @@
 
 All notable changes to `Translatable` will be documented in this file.
 
+## 0.0.6-alpha - 2025-08-27
+
+Fix
+
 ## 0.0.5-alpha - 2025-08-27
 
 Handle entity deleting
