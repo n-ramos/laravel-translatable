@@ -116,7 +116,9 @@ trait HasTranslations
      */
     public function getAttribute($key)
     {
-        if(null === $key) return null;
+        if ($key === null) {
+            return null;
+        }
         $translatableKey = $this->getTranslatableAttributeName($key);
 
         // Si l'attribut traduit existe dans translatableAttributes
