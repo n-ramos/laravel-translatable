@@ -10,11 +10,9 @@ use Nramos\Translatable\Models\Translation;
 trait HasTranslations
 {
     protected static $currentLocale = null;
-
     protected static $columnCache = [];
 
     private $_pendingTranslations = [];
-
     private $_loadedTranslations = null;
 
     public static function bootHasTranslations(): void
@@ -25,7 +23,7 @@ trait HasTranslations
 
         // Amélioration : Suppression automatique des traductions
         static::deleting(function ($model) {
-            if (method_exists($model, 'isForceDeleting') && ! $model->isForceDeleting()) {
+            if (method_exists($model, 'isForceDeleting') && !$model->isForceDeleting()) {
                 return; // Soft delete : conserver les traductions
             }
             $model->translations()->delete();
@@ -74,7 +72,7 @@ trait HasTranslations
     public function setTranslation(string $attribute, string $locale, $value): self
     {
         // Validation de la locale
-        if (! $this->isValidLocale($locale)) {
+        if (!$this->isValidLocale($locale)) {
             throw new \InvalidArgumentException("Invalid locale: {$locale}");
         }
 
@@ -119,7 +117,7 @@ trait HasTranslations
      */
     public function getTranslatableAttributes(): array
     {
-        $cacheKey = static::class.'_translatable_attributes';
+        $cacheKey = static::class . '_translatable_attributes';
 
         return Cache::remember($cacheKey, 3600, function () {
             return property_exists($this, 'translatableAttributes')
@@ -144,8 +142,7 @@ trait HasTranslations
         if (str_starts_with($attribute, '__')) {
             return $attribute;
         }
-
-        return '__'.$attribute;
+        return '__' . $attribute;
     }
 
     /**
@@ -156,7 +153,6 @@ trait HasTranslations
         if (str_starts_with($translatableAttribute, '__')) {
             return substr($translatableAttribute, 2);
         }
-
         return $translatableAttribute;
     }
 
@@ -165,9 +161,7 @@ trait HasTranslations
      */
     public function getAttribute($key)
     {
-        if ($key === null) {
-            return null;
-        }
+        if ($key === null) return null;
 
         $translatableKey = $this->getTranslatableAttributeName($key);
 
@@ -259,7 +253,7 @@ trait HasTranslations
         $table = $this->getTable();
         $cacheKey = "{$table}.{$column}";
 
-        if (! isset(static::$columnCache[$cacheKey])) {
+        if (!isset(static::$columnCache[$cacheKey])) {
             try {
                 static::$columnCache[$cacheKey] = Schema::hasColumn($table, $column);
             } catch (\Exception $e) {
@@ -301,7 +295,6 @@ trait HasTranslations
     protected function isValidLocale(string $locale): bool
     {
         $availableLocales = config('app.available_locales', ['en', 'fr']);
-
         return in_array($locale, $availableLocales);
     }
 
@@ -313,7 +306,7 @@ trait HasTranslations
         $this->_loadedTranslations = null;
 
         // Nettoyer le cache Laravel si utilisé
-        $cacheKey = static::class.'_translatable_attributes';
+        $cacheKey = static::class . '_translatable_attributes';
         Cache::forget($cacheKey);
     }
 
@@ -371,7 +364,7 @@ trait HasTranslations
     /**
      * Amélioration : Dupliquer un modèle avec ses traductions
      */
-    public function replicateWithTranslations(?array $except = null): self
+    public function replicateWithTranslations(array $except = null): self
     {
         $replica = $this->replicate($except);
         $replica->save();
@@ -407,7 +400,7 @@ trait HasTranslations
         $missing = [];
         foreach ($locales as $locale) {
             foreach ($translatableAttributes as $attribute) {
-                if (! $this->getTranslation($attribute, $locale)) {
+                if (!$this->getTranslation($attribute, $locale)) {
                     $missing[] = "{$locale}.{$attribute}";
                 }
             }
@@ -417,7 +410,7 @@ trait HasTranslations
             'percentage' => $percentage,
             'missing' => $missing,
             'completed' => $existing,
-            'total' => $totalRequired,
+            'total' => $totalRequired
         ];
     }
 
@@ -432,7 +425,7 @@ trait HasTranslations
         $collection->macro('pluckTranslated', function ($value, $key = null, $locale = null) {
             $locale = $locale ?? app()->getLocale();
 
-            return $this->map(function ($model) use ($value) {
+            return $this->map(function ($model) use ($value, $locale) {
                 if (method_exists($model, 'isTranslatableAttribute')) {
                     $translatableKey = $model->getTranslatableAttributeName($value);
                     if ($model->isTranslatableAttribute($translatableKey)) {
@@ -442,7 +435,6 @@ trait HasTranslations
                         return $model->getTranslatedAttribute($value);
                     }
                 }
-
                 return $model->getAttribute($value);
             })->pluck($value, $key);
         });
@@ -450,6 +442,9 @@ trait HasTranslations
         return $collection;
     }
 
+    /**
+     * Amélioration : Scope pour pluck traduit
+     */
     /**
      * Amélioration : Scope pour pluck traduit
      */
@@ -462,19 +457,24 @@ trait HasTranslations
         if ($this->isTranslatableAttribute($translatableKey) || $this->isTranslatableAttribute($column)) {
             $attributeName = $this->isTranslatableAttribute($column) ? $column : $translatableKey;
 
-            return $query->leftJoin('translations', function ($join) use ($attributeName, $locale) {
-                $join->on('translations.translatable_id', '=', $this->getTable().'.id')
-                    ->where('translations.translatable_type', '=', static::class)
-                    ->where('translations.attribute_name', '=', $attributeName)
-                    ->where('translations.locale', '=', $locale);
+            // Utiliser le nom de table du modèle Translation
+            $translationTable = (new Translation())->getTable(); // 'model_translations'
+
+            $modelClass = get_class($query->getModel());
+            $tableName = $query->getModel()->getTable();
+
+            return $query->leftJoin($translationTable, function ($join) use ($attributeName, $locale, $modelClass, $tableName, $translationTable) {
+                $join->on($translationTable . '.translatable_id', '=', $tableName . '.id')
+                    ->where($translationTable . '.translatable_type', '=', $modelClass)
+                    ->where($translationTable . '.attribute_name', '=', $attributeName)
+                    ->where($translationTable . '.locale', '=', $locale);
             })
-                ->pluck('translations.value', $key ?: $this->getKeyName());
+                ->pluck($translationTable . '.value', $key ?: $query->getModel()->getKeyName());
         }
 
         // Sinon, utiliser le pluck normal
         return $query->pluck($column, $key);
     }
-
     /**
      * Amélioration : Méthode helper pour pluck avec fallback
      */
@@ -484,7 +484,7 @@ trait HasTranslations
         $fallbackLocale = config('app.fallback_locale');
         $translatableKey = $this->getTranslatableAttributeName($column);
 
-        if (! $this->isTranslatableAttribute($translatableKey) && ! $this->isTranslatableAttribute($column)) {
+        if (!$this->isTranslatableAttribute($translatableKey) && !$this->isTranslatableAttribute($column)) {
             return $query->pluck($column, $key);
         }
 
